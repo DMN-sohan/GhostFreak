@@ -65,18 +65,11 @@ def main():
         pin_memory=True,
     )
 
-    if args.UNet:
-        encoder = model.StegaStampEncoderUnet(
-            KAN=args.KAN
-        )
-        decoder = model.StegaStampDecoderUnet(
-            KAN=args.KAN, secret_size=args.secret_size
-        )
-    else:
-        encoder = model.StegaStampEncoder(KAN=args.KAN)
-        decoder = model.StegaStampDecoder(
-            KAN=args.KAN, secret_size=args.secret_size
-        )
+    
+    encoder = model.GhostFreakEncoder(KAN=args.KAN)
+    decoder = model.GhostFreakDecoder(
+        KAN=args.KAN, secret_size=args.secret_size
+    )
 
     discriminator = model.Discriminator()
     lpips_alex = lpips.LPIPS(net="alex", verbose=False)

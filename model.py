@@ -8,6 +8,7 @@ import numpy as np
 from torch import nn
 import torchgeometry
 from kornia import color
+import kornia as K
 import kornia.filters as KF
 import torch.nn.functional as F
 import warnings
@@ -50,23 +51,90 @@ def convert_from_colorspace(image, color_space):
     else:
         raise ValueError(f"Unsupported color space: {color_space}")
 
-def get_canny_edges_tensor_kornia(image_tensor, low_threshold=0.1, high_threshold=0.2):
+def create_circular_falloff(size=(400,400), radius=1.4, power=2):
     """
-    Detects Canny edges in an RGB image tensor using Kornia (GPU-accelerated).
+    Creates a circular falloff mask using a radial gradient.
 
     Args:
-        image_tensor: A PyTorch tensor representing the RGB image with values in the range [0, 1].
-                    Shape: (C, H, W), where C=3 for RGB.
-        low_threshold: The lower threshold for hysteresis (relative to max gradient).
-        high_threshold: The upper threshold for hysteresis (relative to max gradient).
+        size: Tuple (height, width) of the output.
+        radius: Normalized radius (0.0 - 1.0) where the falloff reaches 0.
+                If None, defaults to 1.0 (extends to the edge).
+        power: Exponent controlling the curve shape (higher = sharper).
 
     Returns:
-        A PyTorch tensor representing the Canny edges as a binary image (0s and 1s) with shape (1, H, W).
+        A PyTorch tensor representing the falloff mask.
     """
-    grayscale_tensor = color.rgb_to_grayscale(image_tensor.unsqueeze(0))
-    canny_edges = KF.canny(grayscale_tensor, low_threshold=low_threshold, high_threshold=high_threshold)
-    edges_tensor = canny_edges[0].float()
-    return edges_tensor.squeeze(0)
+    height, width = size
+    center_x, center_y = width / 2, height / 2
+
+    # Create a grid of coordinates
+    y, x = np.ogrid[-center_y:height - center_y, -center_x:width - center_x]
+
+    # Calculate distance from the center
+    distance_from_center = np.sqrt(x * x + y * y)
+
+    # Normalize distance to 0-1 range
+    if radius is None:
+        radius = max(center_x, center_y)
+    else:
+        radius = radius * max(center_x, center_y)
+    
+    normalized_distance = distance_from_center / radius
+
+    # Create the falloff mask
+    falloff = np.clip(normalized_distance, 0, 1)
+    falloff = 1 - falloff**power  # Invert and apply power function
+
+    return torch.from_numpy(falloff).float().unsqueeze(0)
+
+
+def edge_aware_loss(I, R, falloff, falloff_weight, lambda_edge=0.75, lambda_adaptive=0.25, sigma=2.0, kernel_size=5, neighborhood_size=7):
+
+    """
+    Calculates the combined edge-aware loss.
+
+    Args:
+        I: The original (cover) image tensor (B x C x H x W).
+        R: The residual tensor (B x C x H x W).
+        alpha: Threshold for adaptive masking.
+        lambda_edge: Weight for the edge-sensitive loss.
+        lambda_adaptive: Weight for the adaptive masking loss.
+        sigma: Standard deviation for Gaussian blur used in soft edge masking.
+               Can be a single value (same sigma for x and y) or a tuple/list of two values (sigma_x, sigma_y).
+        kernel_size: Kernel size for Gaussian blur.
+        neighborhood_size: Neighborhood size for edge density calculation.
+        show_images: Boolean to display images for testing in Kaggle.
+
+    Returns:
+        The combined edge-aware loss (scalar tensor).
+    """
+    # 1. Soft Edge Map Generation
+    #   - Canny edge detection
+    edges = K.filters.canny(I, sigma=(sigma, sigma))[0]  # Returns (edges, blurred_image, gradient_x, gradient_y)
+
+    #   - Gaussian blurring for soft edge mask
+    gaussian_blur = K.filters.GaussianBlur2d((kernel_size, kernel_size), (sigma, sigma))
+    E_soft = gaussian_blur(edges)
+
+    # 2. Edge-Sensitive Loss (L_edge)
+    L_edge = torch.mean(((1 - E_soft) * R * falloff * falloff_weight) ** 2)
+
+    # 3. Adaptive Masking Loss (L_adaptive)
+    #   - Edge density calculation (optimized with convolution)
+    kernel = torch.ones((1, 1, neighborhood_size, neighborhood_size), device=I.device, dtype=I.dtype) / (neighborhood_size * neighborhood_size)
+    pad = neighborhood_size // 2
+    edge_density = F.conv2d(E_soft, weight=kernel, padding=pad)
+
+    #   - Adaptive mask creation
+    A = (1 - edge_density) * falloff * falloff_weight
+
+    #   - Adaptive masking loss
+    L_adaptive = torch.mean((A * R) ** 2)
+
+    # 4. Combined Loss
+    L_combined = lambda_edge * L_edge + lambda_adaptive * L_adaptive
+
+    return L_combined
 
 
 class Dense(nn.Module):
@@ -100,7 +168,7 @@ class Dense(nn.Module):
 
 class Conv2D(nn.Module):
     def __init__(
-        self, in_channels, out_channels, kernel_size=3, activation="relu", strides=1
+        self, in_channels, out_channels, kernel_size=3, activation="relu", strides=1, padding=None
     ):
         super(Conv2D, self).__init__()
         self.in_channels = in_channels
@@ -108,9 +176,13 @@ class Conv2D(nn.Module):
         self.kernel_size = kernel_size
         self.activation = activation
         self.strides = strides
+        self.padding = padding
+
+        if self.padding is None:
+          self.padding = int((kernel_size - 1) / 2)
 
         self.conv = nn.Conv2d(
-            in_channels, out_channels, kernel_size, strides, int((kernel_size - 1) / 2)
+            in_channels, out_channels, kernel_size, strides, self.padding
         )
         nn.init.kaiming_normal_(self.conv.weight)
 
@@ -122,7 +194,6 @@ class Conv2D(nn.Module):
             else:
                 raise NotImplementedError
         return outputs
-
 
 class Flatten(nn.Module):
     def __init__(self):
@@ -158,31 +229,44 @@ class SpatialTransformerNetwork(nn.Module):
         return transformed_image
 
 
-class StegaStampEncoder(nn.Module):
+class GhostFreakEncoder(nn.Module):
     def __init__(
         self, KAN=False
     ):
-        super(StegaStampEncoder, self).__init__()
+        super(GhostFreakEncoder, self).__init__()
 
         self.secret_dense = Dense(
             100, 7500, activation="relu", kernel_initializer="he_normal"
         )
 
-        self.conv1 = Conv2D(3 + 3 + 3 + 4, 32, 3, activation="relu")
-        self.conv2 = Conv2D(32, 32, 3, activation="relu", strides=2)
-        self.conv3 = Conv2D(32, 64, 3, activation="relu", strides=2)
-        self.conv4 = Conv2D(64, 128, 3, activation="relu", strides=2)
-        self.conv5 = Conv2D(128, 256, 3, activation="relu", strides=2)
-        self.up6 = Conv2D(256, 128, 3, activation="relu")
-        self.conv6 = Conv2D(256, 128, 3, activation="relu")
-        self.up7 = Conv2D(128, 64, 3, activation="relu")
-        self.conv7 = Conv2D(128, 64, 3, activation="relu")
-        self.up8 = Conv2D(64, 32, 3, activation="relu")
-        self.conv8 = Conv2D(64, 32, 3, activation="relu")
-        self.up9 = Conv2D(32, 32, 3, activation="relu")
-        self.conv9 = Conv2D(3 + 3 + 3 + 4 + 32 + 32, 32, 3, activation="relu")
+        self.conv1 = Conv2D(13, 32, 3, activation="relu")  # 3 secret, 3 rgb, 3 hsv, 4 cmyk
+        self.conv2 = Conv2D(32, 32, 3, activation="relu", stride=2)
+        self.conv3 = Conv2D(32, 64, 3, activation="relu", stride=2)
+        self.conv4 = Conv2D(64, 128, 3, activation="relu", stride=2)
+        self.conv5 = Conv2D(128, 256, 3, activation="relu", stride=2)
+        self.conv6 = Conv2D(256, 512, 3, activation="relu", stride=2)
+        self.conv7 = Conv2D(512, 1024, 3, activation="relu", stride=2)
+
+        self.up8 = Conv2D(1024, 512, 3, activation="relu")
+        self.conv8 = Conv2D(1024, 512, 3, activation="relu")
+
+        self.up9 = Conv2D(512, 256, 3, activation="relu")
+        self.conv9 = Conv2D(512, 256, 3, activation="relu")
+
+        self.up10 = Conv2D(256, 128, 3, activation="relu")
+        self.conv10 = Conv2D(256, 128, 3, activation="relu")
+
+        self.up11 = Conv2D(128, 64, 3, activation="relu")
+        self.conv11 = Conv2D(128, 64, 3, activation="relu")
+
+        self.up12 = Conv2D(64, 32, 3, activation="relu")
+        self.conv12 = Conv2D(64, 32, 3, activation="relu")
+
+        self.up13 = Conv2D(32, 32, 3, activation="relu")
+        self.conv13 = Conv2D(77, 32, 3, activation="relu")  # 13 conv1, 32 conv12, 32
+
         self.residual = Conv2D(32, 3, 1, activation=None)
-         
+
     def forward(self, inputs):
         secret, image = inputs
         secret = secret - 0.5
@@ -190,41 +274,57 @@ class StegaStampEncoder(nn.Module):
         rgb_image = convert_to_colorspace(image, "RGB") - 0.5
         hsv_image = convert_to_colorspace(image, "HSV") - 0.5
         cmyk_image = convert_to_colorspace(image, "CMYK") - 0.5
-        
 
         secret = self.secret_dense(secret)
         secret = secret.reshape(-1, 3, 50, 50)
         secret_enlarged = nn.Upsample(scale_factor=(8, 8))(secret)
 
+        # Concatenate the secret, RGB, HSV, and CMYK representations along the channel dimension.
         inputs = torch.cat([secret_enlarged, rgb_image, hsv_image, cmyk_image], dim=1)
 
+        # Downsampling path (Encoder)
         conv1 = self.conv1(inputs)
         conv2 = self.conv2(conv1)
         conv3 = self.conv3(conv2)
         conv4 = self.conv4(conv3)
         conv5 = self.conv5(conv4)
+        conv6 = self.conv6(conv5)
+        conv7 = self.conv7(conv6)
 
-        up6 = self.up6(nn.Upsample(scale_factor=(2, 2))(conv5))
-        merge6 = torch.cat([conv4, up6], dim=1)
-        conv6 = self.conv6(merge6)
-        up7 = self.up7(nn.Upsample(scale_factor=(2, 2))(conv6))
-        merge7 = torch.cat([conv3, up7], dim=1)
-        conv7 = self.conv7(merge7)
-        up8 = self.up8(nn.Upsample(scale_factor=(2, 2))(conv7))
-        merge8 = torch.cat([conv2, up8], dim=1)
+        # Upsampling path (Decoder)
+        up8 = self.up8(nn.Upsample(scale_factor=(2, 2))(conv7))  # Upsample conv7
+        merge8 = torch.cat([conv6, up8], dim=1)  # Concatenate with conv6
         conv8 = self.conv8(merge8)
-        up9 = self.up9(nn.Upsample(scale_factor=(2, 2))(conv8))
-        merge9 = torch.cat([conv1, up9, inputs], dim=1)
+
+        up9 = self.up9(nn.Upsample(scale_factor=(2, 2))(conv8))  # Upsample conv8
+        merge9 = torch.cat([conv5, up9], dim=1)  # Concatenate with conv5
         conv9 = self.conv9(merge9)
 
-        residual = self.residual(conv9)
+        up10 = self.up10(nn.Upsample(scale_factor=(2, 2))(conv9)) # Upsample conv9
+        merge10 = torch.cat([conv4, up10], dim=1) # Concatenate with conv4
+        conv10 = self.conv10(merge10)
+
+        up11 = self.up11(nn.Upsample(scale_factor=(2, 2))(conv10)) # Upsample conv10
+        merge11 = torch.cat([conv3, up11], dim=1) # Concatenate with conv3
+        conv11 = self.conv11(merge11)
+
+        up12 = self.up12(nn.Upsample(scale_factor=(2, 2))(conv11)) # Upsample conv11
+        merge12 = torch.cat([conv2, up12], dim=1) # Concatenate with conv2
+        conv12 = self.conv12(merge12)
+
+        up13 = self.up13(nn.Upsample(scale_factor=(2, 2))(conv12)) # Upsample conv12
+        merge13 = torch.cat([conv1, up13, inputs], dim=1) # Concatenate with conv1 and the original input
+        conv13 = self.conv13(merge13)
+
+        # Calculate the residual
+        residual = self.residual(conv13)
 
         return residual
 
 
-class StegaStampDecoder(nn.Module):
+class GhostFreakDecoder(nn.Module):
     def __init__(self, KAN=False, secret_size=100):
-        super(StegaStampDecoder, self).__init__()
+        super(GhostFreakDecoder, self).__init__()
         self.secret_size = secret_size
 
         self.stn = SpatialTransformerNetwork()
@@ -471,46 +571,16 @@ def build_model(
             >= 0.7
         )
 
-    size = (int(image_input.shape[2]), int(image_input.shape[3]))
-    gain = 10
-    falloff_speed = 4
-    falloff_im = np.ones(size)
-    for i in range(int(falloff_im.shape[0] / falloff_speed)):  # for i in range 100
-        falloff_im[-i, :] *= (
-            np.cos(4 * np.pi * i / size[0] + np.pi) + 1
-        ) / 2  # [cos[(4*pi*i/400)+pi] + 1]/2
-        falloff_im[i, :] *= (
-            np.cos(4 * np.pi * i / size[0] + np.pi) + 1
-        ) / 2  # [cos[(4*pi*i/400)+pi] + 1]/2
-    for j in range(int(falloff_im.shape[1] / falloff_speed)):
-        falloff_im[:, -j] *= (np.cos(4 * np.pi * j / size[0] + np.pi) + 1) / 2
-        falloff_im[:, j] *= (np.cos(4 * np.pi * j / size[0] + np.pi) + 1) / 2
-    falloff_im = 1 - falloff_im
-    falloff_im = torch.from_numpy(falloff_im).float()
-    if args.cuda:
-        falloff_im = falloff_im.cuda()
-    falloff_im *= l2_edge_gain
-
-    encoded_image_yuv = color.rgb_to_yuv(encoded_image)
-    avg_encoded = torch.mean(encoded_image_yuv)
-    max_encoded = torch.max(encoded_image_yuv)
-    image_input_yuv = color.rgb_to_yuv(image_input)
-    avg_image = torch.mean(image_input_yuv)
-    max_image = torch.max(image_input_yuv)
-    im_diff = encoded_image_yuv - image_input_yuv
-    im_diff += im_diff * falloff_im.unsqueeze_(0)
-    yuv_loss = torch.mean((im_diff) ** 2, axis=[0, 2, 3])
-    yuv_scales = torch.Tensor(yuv_scales)
-    if args.cuda:
-        yuv_scales = yuv_scales.cuda()
-    image_loss = torch.dot(yuv_loss, yuv_scales)
+    falloff = create_circular_falloff()
+    falloff_weight = 2
+    edge_loss = edge_aware_loss(input_warped, residual_warped, falloff, falloff_weight)
 
     D_loss = D_output_real - D_output_fake
     G_loss = D_output_fake  # todo: figure out what it means
     epsilon = 0.05
 
     loss = (
-        loss_scales[0] * image_loss + 
+        loss_scales[0] * edge_loss + 
         loss_scales[1] * lpips_loss + 
         loss_scales[2] * secret_loss
     )
@@ -518,7 +588,7 @@ def build_model(
     if not args.no_gan:
         loss += loss_scales[3] * G_loss 
 
-    writer.add_scalar("Model_Loss/image_loss", image_loss, global_step)
+    writer.add_scalar("Model_Loss/edge_loss", edge_loss, global_step)
     writer.add_scalar("Model_Loss/lpips_loss", lpips_loss, global_step)
     writer.add_scalar("Model_Loss/secret_loss", secret_loss, global_step)
 
@@ -538,22 +608,22 @@ def build_model(
         writer.add_image("warped/image_warped", input_warped[0], global_step)
         writer.add_image(
             "warped/encoded_warped",
-            torch.clamp(convert_from_colorspace(encoded_warped[0], args.color_space), min=0, max=1),
+            torch.clamp(encoded_warped[0], min=0, max=1),
             global_step,
         )
         writer.add_image(
             "warped/residual_warped", residual_warped[0] + 0.5, global_step
         )
 
-        writer.add_image("image/image_input", convert_from_colorspace(image_input[0], args.color_space), global_step)
+        writer.add_image("image/image_input", image_input[0], global_step)
         writer.add_image(
             "image/encoded_image",
-            torch.clamp(convert_from_colorspace(encoded_image[0], args.color_space), min=0, max=1),
+            torch.clamp(encoded_image[0], min=0, max=1),
             global_step,
         )
         writer.add_image(
             "image/residual",
-            torch.clamp(convert_from_colorspace(residual[0], args.color_space), min=0, max=1),
+            torch.clamp(residual[0], min=0, max=1),
             global_step,
         )
 
