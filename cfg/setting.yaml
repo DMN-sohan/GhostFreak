@@ -1,7 +1,7 @@
 # General Settings
 exp_name: Torch                                  # Experiment name
-seed: 0                                          # Random seed for reproducibility
-numpy_seed : 0                                   # Numpy seed 
+seed: 2                                          # Random seed for reproducibility
+numpy_seed : 4                                   # Numpy seed 
 cuda: true                                       # Whether to use GPU (CUDA)
 batch_size: 4                                    # Batch size for training
 num_steps: 15000                                 # Total training steps
