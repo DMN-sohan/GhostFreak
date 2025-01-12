@@ -281,7 +281,7 @@ class GhostFreakEncoder(nn.Module):
         secret_enlarged = nn.Upsample(scale_factor=(8, 8))(secret)
 
         # print(f"{secret_enlarged.shape} {rgb_image.shape} {hsv_image.shape} {cmyk_image.shape}")
-        
+
         # Concatenate the secret, RGB, HSV, and CMYK representations along the channel dimension.
         inputs = torch.cat([secret_enlarged, rgb_image, hsv_image, cmyk_image], dim=1)
 
@@ -581,6 +581,10 @@ def build_model(
         )
 
     falloff = create_circular_falloff()
+
+    if args.cuda:
+        falloff = falloff.cuda()
+
     falloff_weight = 2
     edge_loss = edge_aware_loss(input_warped, residual_warped, falloff, falloff_weight)
 
