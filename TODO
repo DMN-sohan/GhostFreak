@@ -1,0 +1,10 @@
+Making StegaStamp dynamic
+YAML:
+  ✔ Unet @started(24-12-22 17:24) @done(24-12-22 17:30) @lasted(6m54s)
+  ✔ Pretrained @started(24-12-22 17:24) @done(24-12-22 17:30) @lasted(6m56s)
+  ✔ Color Space @started(24-12-22 17:24) @done(24-12-22 17:50) @lasted(26m15s)
+  ✔ KAN @started(24-12-22 17:24) @done(24-12-22 17:35) @lasted(11m27s)
+  
+  ☐ Fix UNet
+  ☐ Fix CMYK + UNet
+

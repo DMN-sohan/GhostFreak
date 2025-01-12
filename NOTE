@@ -1,0 +1,8 @@
+- The model will learn anything intrinsically as long as the model architecture is sufficiently complex
+Therefore, we do not need to explicitly convert residual into RGB, as over time, it will learn to self convert to RBG 
+to minimize loss. Although, this begs the question, is a guide required. If yes, how will you guide it.
+
+- What is the 1500 step barrier. 
+
+- What is the limit of the architecture. Is there a better, self learning architecture that can add and remove neurons.
+Master governing the slave architecture to modify it as it pleases to avoid platues bar
