@@ -4,7 +4,7 @@ seed: 0                                          # Random seed for reproducibili
 numpy_seed : 0                                   # Numpy seed 
 cuda: true                                       # Whether to use GPU (CUDA)
 batch_size: 4                                    # Batch size for training
-num_steps: 10000                                 # Total training steps
+num_steps: 15000                                 # Total training steps
 pretrained: false                                # Use a pretrained model
 checkpoints_path: ./checkpoints/                 # Path to save checkpoints
 logs_path: ./logs/                               # Path for logging
