@@ -240,12 +240,12 @@ class GhostFreakEncoder(nn.Module):
         )
 
         self.conv1 = Conv2D(13, 32, 3, activation="relu")  # 3 secret, 3 rgb, 3 hsv, 4 cmyk
-        self.conv2 = Conv2D(32, 32, 3, activation="relu", stride=2)
-        self.conv3 = Conv2D(32, 64, 3, activation="relu", stride=2)
-        self.conv4 = Conv2D(64, 128, 3, activation="relu", stride=2)
-        self.conv5 = Conv2D(128, 256, 3, activation="relu", stride=2)
-        self.conv6 = Conv2D(256, 512, 3, activation="relu", stride=2)
-        self.conv7 = Conv2D(512, 1024, 3, activation="relu", stride=2)
+        self.conv2 = Conv2D(32, 32, 3, activation="relu", strides=2)
+        self.conv3 = Conv2D(32, 64, 3, activation="relu", strides=2)
+        self.conv4 = Conv2D(64, 128, 3, activation="relu", strides=2)
+        self.conv5 = Conv2D(128, 256, 3, activation="relu", strides=2)
+        self.conv6 = Conv2D(256, 512, 3, activation="relu", strides=2)
+        self.conv7 = Conv2D(512, 1024, 3, activation="relu", strides=2)
 
         self.up8 = Conv2D(1024, 512, 3, activation="relu")
         self.conv8 = Conv2D(1024, 512, 3, activation="relu")
