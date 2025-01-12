@@ -461,6 +461,11 @@ def get_secret_acc(secret_true, secret_pred):
     return bit_acc, str_acc
 
 
+falloff = create_circular_falloff()
+falloff = falloff.cuda()
+
+falloff_weight = 2
+
 def build_model(
     encoder,
     decoder,
@@ -580,17 +585,10 @@ def build_model(
             >= 0.7
         )
 
-    falloff = create_circular_falloff()
-
-    if args.cuda:
-        falloff = falloff.cuda()
-
-    falloff_weight = 2
     edge_loss = edge_aware_loss(input_warped, residual_warped, falloff, falloff_weight)
 
     D_loss = D_output_real - D_output_fake
     G_loss = D_output_fake  # todo: figure out what it means
-    epsilon = 0.05
 
     loss = (
         loss_scales[0] * edge_loss + 
