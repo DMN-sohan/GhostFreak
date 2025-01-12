@@ -51,22 +51,22 @@ def convert_from_colorspace(image, color_space):
         raise ValueError(f"Unsupported color space: {color_space}")
 
 def get_canny_edges_tensor_kornia(image_tensor, low_threshold=0.1, high_threshold=0.2):
-  """
-  Detects Canny edges in an RGB image tensor using Kornia (GPU-accelerated).
+    """
+    Detects Canny edges in an RGB image tensor using Kornia (GPU-accelerated).
 
-  Args:
-    image_tensor: A PyTorch tensor representing the RGB image with values in the range [0, 1].
-                  Shape: (C, H, W), where C=3 for RGB.
-    low_threshold: The lower threshold for hysteresis (relative to max gradient).
-    high_threshold: The upper threshold for hysteresis (relative to max gradient).
+    Args:
+        image_tensor: A PyTorch tensor representing the RGB image with values in the range [0, 1].
+                    Shape: (C, H, W), where C=3 for RGB.
+        low_threshold: The lower threshold for hysteresis (relative to max gradient).
+        high_threshold: The upper threshold for hysteresis (relative to max gradient).
 
-  Returns:
-    A PyTorch tensor representing the Canny edges as a binary image (0s and 1s) with shape (1, H, W).
-  """
-  grayscale_tensor = color.rgb_to_grayscale(image_tensor.unsqueeze(0))
-  canny_edges = KF.canny(grayscale_tensor, low_threshold=low_threshold, high_threshold=high_threshold)
-  edges_tensor = canny_edges[0].float()
-  return edges_tensor.squeeze(0)
+    Returns:
+        A PyTorch tensor representing the Canny edges as a binary image (0s and 1s) with shape (1, H, W).
+    """
+    grayscale_tensor = color.rgb_to_grayscale(image_tensor.unsqueeze(0))
+    canny_edges = KF.canny(grayscale_tensor, low_threshold=low_threshold, high_threshold=high_threshold)
+    edges_tensor = canny_edges[0].float()
+    return edges_tensor.squeeze(0)
 
 
 class Dense(nn.Module):
@@ -168,7 +168,7 @@ class StegaStampEncoder(nn.Module):
             100, 7500, activation="relu", kernel_initializer="he_normal"
         )
 
-        self.conv1 = Conv2D(3 + 3 + 3 + 3, 32, 3, activation="relu")
+        self.conv1 = Conv2D(3 + 3 + 3 + 4, 32, 3, activation="relu")
         self.conv2 = Conv2D(32, 32, 3, activation="relu", strides=2)
         self.conv3 = Conv2D(32, 64, 3, activation="relu", strides=2)
         self.conv4 = Conv2D(64, 128, 3, activation="relu", strides=2)
@@ -180,7 +180,7 @@ class StegaStampEncoder(nn.Module):
         self.up8 = Conv2D(64, 32, 3, activation="relu")
         self.conv8 = Conv2D(64, 32, 3, activation="relu")
         self.up9 = Conv2D(32, 32, 3, activation="relu")
-        self.conv9 = Conv2D(3 + 3 + 3 + 3 + 32 + 32, 32, 3, activation="relu")
+        self.conv9 = Conv2D(3 + 3 + 3 + 4 + 32 + 32, 32, 3, activation="relu")
         self.residual = Conv2D(32, 3, 1, activation=None)
          
     def forward(self, inputs):
@@ -203,6 +203,7 @@ class StegaStampEncoder(nn.Module):
         conv3 = self.conv3(conv2)
         conv4 = self.conv4(conv3)
         conv5 = self.conv5(conv4)
+
         up6 = self.up6(nn.Upsample(scale_factor=(2, 2))(conv5))
         merge6 = torch.cat([conv4, up6], dim=1)
         conv6 = self.conv6(merge6)
@@ -215,6 +216,7 @@ class StegaStampEncoder(nn.Module):
         up9 = self.up9(nn.Upsample(scale_factor=(2, 2))(conv8))
         merge9 = torch.cat([conv1, up9, inputs], dim=1)
         conv9 = self.conv9(merge9)
+
         residual = self.residual(conv9)
 
         return residual
@@ -227,7 +229,7 @@ class StegaStampDecoder(nn.Module):
 
         self.stn = SpatialTransformerNetwork()
         self.decoder = nn.Sequential(
-            Conv2D(3, 32, 3, strides=2, activation="relu"),  # Modified input channels, since model is learning to convert on it's own
+            Conv2D(3, 32, 3, strides=2, activation="relu"),
             Conv2D(32, 32, 3, activation="relu"),
             Conv2D(32, 64, 3, strides=2, activation="relu"),
             Conv2D(64, 64, 3, activation="relu"),
@@ -245,89 +247,6 @@ class StegaStampDecoder(nn.Module):
         transformed_image = self.stn(image)
 
         return torch.sigmoid(self.decoder(transformed_image))
-
-
-class StegaStampEncoderUnet(nn.Module):
-    def __init__(self, KAN=False, bilinear=False):
-        super(StegaStampEncoderUnet, self).__init__()
-
-        if KAN:
-            import kan_unet_parts as UNet
-        else:
-            import unet_parts as UNet
-        self.secret_dense = Dense(
-            100, 7500, activation="relu", kernel_initializer="he_normal"
-        )
-
-        self.conv1 = nn.Conv2d(3 + 3, 3 + 3, 3, padding=8)
-        self.inc = UNet.DoubleConv(3 + 3, 64)
-        self.down1 = UNet.Down(64, 128)
-        self.down2 = UNet.Down(128, 256)
-        self.DoubleConv = UNet.DoubleConv(256, 512)
-        factor = 2 if bilinear else 1
-        self.up1 = UNet.Up(512, 256 // factor, bilinear)
-        self.up2 = UNet.Up(256, 128 // factor, bilinear)
-        self.up3 = UNet.Up(128, 64 // factor, bilinear)
-        self.outc = UNet.OutConv(64, 3)
-        self.conv2 = nn.Conv2d(3, 3, 15, padding=0)
-        self.sig = nn.Sigmoid()
-        
-
-    def forward(self, inputs):
-        secret, image = inputs
-        secret = secret - 0.5
-
-        image_converted = image - 0.5
-
-        secret = self.secret_dense(secret)
-        secret = secret.reshape(-1, 3, 50, 50)
-        image_converted = nn.functional.interpolate(
-            image_converted, scale_factor=(1 / 8, 1 / 8)
-        )
-
-        inputs = torch.cat([secret, image_converted], dim=1)
-        conv1 = self.conv1(inputs)
-        x1 = self.inc(conv1)
-        x2 = self.down1(x1)
-        x3 = self.down2(x2)
-        x4 = self.DoubleConv(x3)
-        x = self.up1(x4, x3)
-        x = self.up2(x, x2)
-        x = self.up3(x, x1)
-        x = self.outc(x)
-        x = self.conv2(x)
-
-        secret_enlarged = nn.Upsample(scale_factor=(8, 8))(x)
-        secret_enlarged = self.sig(secret_enlarged)
-
-        return secret_enlarged
-
-
-class StegaStampDecoderUnet(nn.Module):
-    def __init__(self, color_space="RGB", KAN=False, secret_size=100):
-        super(StegaStampDecoderUnet, self).__init__()
-        self.secret_size = secret_size
-
-        self.stn = SpatialTransformerNetwork(color_space=color_space)
-        self.decoder = nn.Sequential(
-            Conv2D(3, 32, 3, strides=2, activation="relu"),  # Modified input channels
-            Conv2D(32, 32, 3, activation="relu"),
-            Conv2D(32, 64, 3, strides=2, activation="relu"),
-            Conv2D(64, 64, 3, activation="relu"),
-            Conv2D(64, 64, 3, strides=2, activation="relu"),
-            Conv2D(64, 128, 3, strides=2, activation="relu"),
-            Conv2D(128, 128, 3, strides=2, activation="relu"),
-            Flatten(),
-            Dense(21632, 512, activation="relu"),
-            Dense(512, secret_size, activation=None),
-        )
-
-    def forward(self, image):
-        image_converted = image - 0.5
-        transformed_image = self.stn(image_converted)
-
-        return torch.sigmoid(self.decoder(transformed_image))
-
 
 class Discriminator(nn.Module):
     def __init__(self):
