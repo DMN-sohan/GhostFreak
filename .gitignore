@@ -9,3 +9,5 @@
 *.iml
 *.xml
 temp.py
+cfg/setting.yaml
+dataset.py
