@@ -125,9 +125,9 @@ def main():
 
             no_im_loss = global_step < args.no_im_loss_steps
 
-            l2_loss_scale = 0 if no_im_loss else compute_scale(args.l2_loss_scale, args.l2_loss_ramp, global_step)
-            lpips_loss_scale = 0 if no_im_loss else compute_scale(args.lpips_loss_scale, args.lpips_loss_ramp, global_step)
-            G_loss_scale = 0 if no_im_loss else compute_scale(args.G_loss_scale, args.G_loss_ramp, global_step)
+            l2_loss_scale = compute_scale(args.l2_loss_scale, args.l2_loss_ramp, global_step)
+            lpips_loss_scale = compute_scale(args.lpips_loss_scale, args.lpips_loss_ramp, global_step)
+            G_loss_scale = compute_scale(args.G_loss_scale, args.G_loss_ramp, global_step)
 
             secret_loss_scale = compute_scale(args.secret_loss_scale, args.secret_loss_ramp, global_step)
 
