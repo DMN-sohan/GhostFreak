@@ -1,6 +1,6 @@
 import yaml
 
-with open('/kaggle/working/Stegastamp_pytorch_version/cfg/setting.yaml', 'r') as file:
+with open('/kaggle/working/GhostFreak/cfg/setting.yaml', 'r') as file:
     settings = yaml.safe_load(file)
 
 KAN_value = settings.get('KAN', None)
