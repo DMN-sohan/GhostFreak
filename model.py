@@ -30,7 +30,7 @@ def convert_to_colorspace(image, color_space):
         c = (1 - r - k) / (1 - k + 1e-8)
         m = (1 - g - k) / (1 - k + 1e-8)
         y = (1 - b - k) / (1 - k + 1e-8)
-        return torch.stack([c, m, y, k], dim=0)
+        return torch.stack([c, m, y, k], dim=1)
     else:
         raise ValueError(f"Unsupported color space: {color_space}")
 
@@ -272,13 +272,15 @@ class GhostFreakEncoder(nn.Module):
         hsv_image = convert_to_colorspace(image, "HSV") - 0.5
         cmyk_image = convert_to_colorspace(image, "CMYK") - 0.5
 
-        rgb_image = rgb_image.unsqueeze(0)  
-        hsv_image = hsv_image.unsqueeze(0)  
-        cmyk_image = cmyk_image.unsqueeze(0)  
+        # rgb_image = rgb_image.unsqueeze(0)  
+        # hsv_image = hsv_image.unsqueeze(0)  
+        # cmyk_image = cmyk_image.unsqueeze(0)  
 
         secret = self.secret_dense(secret)
         secret = secret.reshape(-1, 3, 50, 50)
-        secret_enlarged = nn.Upsample(scale_factor=(8, 8), mode='nearest', align_corners=None)(secret)  # Add align_corners=None
+        secret_enlarged = nn.Upsample(scale_factor=(8, 8))(secret)
+
+        # print(f"{secret_enlarged.shape} {rgb_image.shape} {hsv_image.shape} {cmyk_image.shape}")
         
         # Concatenate the secret, RGB, HSV, and CMYK representations along the channel dimension.
         inputs = torch.cat([secret_enlarged, rgb_image, hsv_image, cmyk_image], dim=1)
