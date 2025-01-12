@@ -25,17 +25,6 @@ IMAGE_SIZE = 400
 def infoMessage0(string):
     print(f"[-----]: {string}")
 
-
-infoMessage0("opening settings file")
-with open("cfg/setting.yaml", "r") as f:
-    args = EasyDict(yaml.load(f, Loader=yaml.SafeLoader))
-
-if not os.path.exists(args.checkpoints_path):
-    os.makedirs(args.checkpoints_path)
-
-if not os.path.exists(args.saved_models):
-    os.makedirs(args.saved_models)
-
 def compute_scale(scale, ramp, global_step):
     return min(
                 scale * global_step / ramp,
@@ -46,6 +35,18 @@ def linear_scale(global_step, loss_steps, scale):
     return scale/loss_steps * global_step
 
 def main():
+
+    infoMessage0("opening settings file")
+    with open("cfg/setting.yaml", "r") as f:
+        args = EasyDict(yaml.load(f, Loader=yaml.SafeLoader))
+
+    if not os.path.exists(args.checkpoints_path):
+        os.makedirs(args.checkpoints_path)
+
+    if not os.path.exists(args.saved_models):
+        os.makedirs(args.saved_models)
+
+
     torch.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False

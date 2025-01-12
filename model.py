@@ -15,7 +15,7 @@ import warnings
 
 warnings.filterwarnings("ignore")
 from torchvision import transforms
-
+from torchvision.transforms.functional import center_crop
 
 def convert_to_colorspace(image, color_space):
     """Convert RGB image to specified color space"""
@@ -30,7 +30,7 @@ def convert_to_colorspace(image, color_space):
         c = (1 - r - k) / (1 - k + 1e-8)
         m = (1 - g - k) / (1 - k + 1e-8)
         y = (1 - b - k) / (1 - k + 1e-8)
-        return torch.stack([c, m, y, k], dim=1)
+        return torch.stack([c, m, y, k], dim=0)
     else:
         raise ValueError(f"Unsupported color space: {color_space}")
 
@@ -228,16 +228,13 @@ class SpatialTransformerNetwork(nn.Module):
 
         return transformed_image
 
-
 class GhostFreakEncoder(nn.Module):
     def __init__(
         self, KAN=False
     ):
         super(GhostFreakEncoder, self).__init__()
 
-        self.secret_dense = Dense(
-            100, 7500, activation="relu", kernel_initializer="he_normal"
-        )
+        self.secret_dense = Dense(100, 7500, activation="relu", kernel_initializer="he_normal")
 
         self.conv1 = Conv2D(13, 32, 3, activation="relu")  # 3 secret, 3 rgb, 3 hsv, 4 cmyk
         self.conv2 = Conv2D(32, 32, 3, activation="relu", strides=2)
@@ -275,10 +272,14 @@ class GhostFreakEncoder(nn.Module):
         hsv_image = convert_to_colorspace(image, "HSV") - 0.5
         cmyk_image = convert_to_colorspace(image, "CMYK") - 0.5
 
+        rgb_image = rgb_image.unsqueeze(0)  
+        hsv_image = hsv_image.unsqueeze(0)  
+        cmyk_image = cmyk_image.unsqueeze(0)  
+
         secret = self.secret_dense(secret)
         secret = secret.reshape(-1, 3, 50, 50)
-        secret_enlarged = nn.Upsample(scale_factor=(8, 8))(secret)
-
+        secret_enlarged = nn.Upsample(scale_factor=(8, 8), mode='nearest', align_corners=None)(secret)  # Add align_corners=None
+        
         # Concatenate the secret, RGB, HSV, and CMYK representations along the channel dimension.
         inputs = torch.cat([secret_enlarged, rgb_image, hsv_image, cmyk_image], dim=1)
 
@@ -291,36 +292,42 @@ class GhostFreakEncoder(nn.Module):
         conv6 = self.conv6(conv5)
         conv7 = self.conv7(conv6)
 
-        # Upsampling path (Decoder)
-        up8 = self.up8(nn.Upsample(scale_factor=(2, 2))(conv7))  # Upsample conv7
+        # Upsampling path (Decoder) with center cropping
+        up8 = self.up8(nn.Upsample(scale_factor=(2, 2), mode='nearest', align_corners=None)(conv7))  # Upsample conv7
+        up8 = center_crop(up8, conv6.shape[2:])  # Center crop up8 to match conv6
         merge8 = torch.cat([conv6, up8], dim=1)  # Concatenate with conv6
         conv8 = self.conv8(merge8)
 
-        up9 = self.up9(nn.Upsample(scale_factor=(2, 2))(conv8))  # Upsample conv8
+        up9 = self.up9(nn.Upsample(scale_factor=(2, 2), mode='nearest', align_corners=None)(conv8))  # Upsample conv8
+        up9 = center_crop(up9, conv5.shape[2:])  # Center crop up9 to match conv5
         merge9 = torch.cat([conv5, up9], dim=1)  # Concatenate with conv5
         conv9 = self.conv9(merge9)
 
-        up10 = self.up10(nn.Upsample(scale_factor=(2, 2))(conv9)) # Upsample conv9
+        up10 = self.up10(nn.Upsample(scale_factor=(2, 2), mode='nearest', align_corners=None)(conv9)) # Upsample conv9
+        up10 = center_crop(up10, conv4.shape[2:])  # Center crop up10 to match conv4
         merge10 = torch.cat([conv4, up10], dim=1) # Concatenate with conv4
         conv10 = self.conv10(merge10)
 
-        up11 = self.up11(nn.Upsample(scale_factor=(2, 2))(conv10)) # Upsample conv10
+        up11 = self.up11(nn.Upsample(scale_factor=(2, 2), mode='nearest', align_corners=None)(conv10)) # Upsample conv10
+        up11 = center_crop(up11, conv3.shape[2:])  # Center crop up11 to match conv3
         merge11 = torch.cat([conv3, up11], dim=1) # Concatenate with conv3
         conv11 = self.conv11(merge11)
 
-        up12 = self.up12(nn.Upsample(scale_factor=(2, 2))(conv11)) # Upsample conv11
+        up12 = self.up12(nn.Upsample(scale_factor=(2, 2), mode='nearest', align_corners=None)(conv11)) # Upsample conv11
+        up12 = center_crop(up12, conv2.shape[2:])  # Center crop up12 to match conv2
         merge12 = torch.cat([conv2, up12], dim=1) # Concatenate with conv2
         conv12 = self.conv12(merge12)
 
-        up13 = self.up13(nn.Upsample(scale_factor=(2, 2))(conv12)) # Upsample conv12
+        up13 = self.up13(nn.Upsample(scale_factor=(2, 2), mode='nearest', align_corners=None)(conv12)) # Upsample conv12
+        # No need to crop up13 here as it's concatenated with conv1 and inputs
+
         merge13 = torch.cat([conv1, up13, inputs], dim=1) # Concatenate with conv1 and the original input
         conv13 = self.conv13(merge13)
 
         # Calculate the residual
         residual = self.residual(conv13)
 
-        return residual
-
+        return residual 
 
 class GhostFreakDecoder(nn.Module):
     def __init__(self, KAN=False, secret_size=100):
