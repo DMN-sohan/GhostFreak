@@ -117,7 +117,7 @@ def edge_aware_loss(I, R, falloff, falloff_weight, lambda_edge=0.75, lambda_adap
     E_soft = gaussian_blur(edges)
 
     # 2. Edge-Sensitive Loss (L_edge)
-    L_edge = torch.mean(((1 - E_soft) * R * falloff * falloff_weight) ** 2)
+    L_edge = torch.mean(((1 - E_soft) * R) ** 2)
 
     # 3. Adaptive Masking Loss (L_adaptive)
     #   - Edge density calculation (optimized with convolution)
