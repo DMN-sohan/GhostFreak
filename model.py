@@ -584,9 +584,9 @@ def build_model(
             >= 0.7
         )
 
-    lambda_edge=0.75 
-    lambda_adaptive=0.25
-    lambda_residual=1
+    lambda_edge=0.075 
+    lambda_adaptive=0.025
+    lambda_residual=0.1
     
     L_edge, L_adaptive, L_residual_penalty = edge_aware_loss(input_warped, residual_warped, falloff, falloff_weight)
     edge_loss = lambda_edge * L_edge + lambda_adaptive * L_adaptive + lambda_residual * L_residual_penalty
