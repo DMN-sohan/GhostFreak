@@ -88,7 +88,7 @@ def create_circular_falloff(size=(400,400), radius=1.4, power=2):
     return torch.from_numpy(falloff).float().unsqueeze(0)
 
 
-def edge_aware_loss(I, R, falloff, falloff_weight, lambda_edge=0.75, lambda_adaptive=0.25, sigma=2.0, kernel_size=5, neighborhood_size=7):
+def edge_aware_loss(I, R, falloff, falloff_weight, lambda_edge=0.75, lambda_adaptive=0.25, lamvda_residual=1, sigma=2.0, kernel_size=5, neighborhood_size=7):
 
     """
     Calculates the combined edge-aware loss.
@@ -99,6 +99,7 @@ def edge_aware_loss(I, R, falloff, falloff_weight, lambda_edge=0.75, lambda_adap
         alpha: Threshold for adaptive masking.
         lambda_edge: Weight for the edge-sensitive loss.
         lambda_adaptive: Weight for the adaptive masking loss.
+        lambda_residual: Weight for the residual penalty term.
         sigma: Standard deviation for Gaussian blur used in soft edge masking.
                Can be a single value (same sigma for x and y) or a tuple/list of two values (sigma_x, sigma_y).
         kernel_size: Kernel size for Gaussian blur.
@@ -131,8 +132,12 @@ def edge_aware_loss(I, R, falloff, falloff_weight, lambda_edge=0.75, lambda_adap
     #   - Adaptive masking loss
     L_adaptive = torch.mean((A * R) ** 2)
 
-    # 4. Combined Loss
-    L_combined = lambda_edge * L_edge + lambda_adaptive * L_adaptive
+    # 4. Residual Penalty (L_residual_penalty) - Prevent blank residuals
+    epsilon = 1e-4  # Small threshold to prevent blank residuals
+    L_residual_penalty = torch.mean(torch.clamp(R, min=epsilon) ** 2)
+
+    # 5. Combined Loss
+    L_combined = lambda_edge * L_edge + lambda_adaptive * L_adaptive + lambda_residual * L_residual_penalty
 
     return L_combined
 
