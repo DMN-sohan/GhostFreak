@@ -88,7 +88,7 @@ def create_circular_falloff(size=(400,400), radius=1.4, power=2):
     return torch.from_numpy(falloff).float().unsqueeze(0)
 
 
-def edge_aware_loss(I, R, falloff, falloff_weight, lambda_edge=0.75, lambda_adaptive=0.25, lamvda_residual=1, sigma=2.0, kernel_size=5, neighborhood_size=7):
+def edge_aware_loss(I, R, falloff, falloff_weight, sigma=2.0, kernel_size=5, neighborhood_size=7):
 
     """
     Calculates the combined edge-aware loss.
@@ -97,9 +97,6 @@ def edge_aware_loss(I, R, falloff, falloff_weight, lambda_edge=0.75, lambda_adap
         I: The original (cover) image tensor (B x C x H x W).
         R: The residual tensor (B x C x H x W).
         alpha: Threshold for adaptive masking.
-        lambda_edge: Weight for the edge-sensitive loss.
-        lambda_adaptive: Weight for the adaptive masking loss.
-        lambda_residual: Weight for the residual penalty term.
         sigma: Standard deviation for Gaussian blur used in soft edge masking.
                Can be a single value (same sigma for x and y) or a tuple/list of two values (sigma_x, sigma_y).
         kernel_size: Kernel size for Gaussian blur.
@@ -136,10 +133,7 @@ def edge_aware_loss(I, R, falloff, falloff_weight, lambda_edge=0.75, lambda_adap
     epsilon = 1e-4  # Small threshold to prevent blank residuals
     L_residual_penalty = torch.mean(torch.clamp(R, min=epsilon) ** 2)
 
-    # 5. Combined Loss
-    L_combined = lambda_edge * L_edge + lambda_adaptive * L_adaptive + lambda_residual * L_residual_penalty
-
-    return L_combined
+    return L_edge, L_adaptive, L_residual_penalty
 
 
 class Dense(nn.Module):
@@ -590,8 +584,12 @@ def build_model(
             >= 0.7
         )
 
-    edge_loss = edge_aware_loss(input_warped, residual_warped, falloff, falloff_weight)
-
+    lambda_edge=0.75 
+    lambda_adaptive=0.25
+    lambda_residual=1
+    
+    L_edge, L_adaptive, L_residual_penalty = edge_aware_loss(input_warped, residual_warped, falloff, falloff_weight)
+    edge_loss = lambda_edge * L_edge + lambda_adaptive * L_adaptive + lambda_residual * L_residual_penalty
     D_loss = D_output_real - D_output_fake
     G_loss = D_output_fake  # todo: figure out what it means
 
@@ -607,6 +605,11 @@ def build_model(
     writer.add_scalar("Model_Loss/edge_loss", edge_loss, global_step)
     writer.add_scalar("Model_Loss/lpips_loss", lpips_loss, global_step)
     writer.add_scalar("Model_Loss/secret_loss", secret_loss, global_step)
+
+    writer.add_scalar("Edge_Loss/edge_loss", edge_loss, global_step)
+    writer.add_scalar("Edge_Loss/L_edge", L_edge, global_step)
+    writer.add_scalar("Edge_Loss/L_adaptive", L_adaptive, global_step)
+    writer.add_scalar("Edge_Loss/L_residual_penalty", L_residual_penalty, global_step)
 
     if not args.no_gan:
         writer.add_scalar("Model_Loss/G_loss", G_loss, global_step)
