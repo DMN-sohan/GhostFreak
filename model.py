@@ -135,7 +135,18 @@ def edge_aware_loss(I, R, falloff, falloff_weight, sigma=2.0, kernel_size=5, nei
 
     return L_edge, L_adaptive, L_residual_penalty
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+lpips_alex = lpips.LPIPS(net="alex", verbose=False).to(device)
 
+target_image_path = r"/kaggle/input/gfdst1/output_images/residual/15000.jpg" # Update this path
+target_image = Image.open(target_image_path).convert('RGB')
+target_image_tensor = torch.from_numpy(np.array(target_image)).float().permute(2, 0, 1).unsqueeze(0) / 255.0
+target_image_tensor = target_image_tensor.to(device)
+
+def residual_loss(residual_image, k_val = 2.0):
+    L_lpips_raw = lpips_alex(residual_image, target_image_tensor).mean()
+    L_lpips_transformed = torch.exp(-k_val * L_lpips_raw)
+    return L_lpips_transformed
 class Dense(nn.Module):
     def __init__(
         self,
@@ -560,7 +571,7 @@ def build_model(
     normalized_input = image_input * 2 - 1
     normalized_encoded = encoded_image * 2 - 1
     lpips_loss = torch.mean(lpips_fn(normalized_input, normalized_encoded))
-
+    residual_loss = residual_loss(residual)
     cross_entropy = nn.BCELoss()
     if args.cuda:
         cross_entropy = cross_entropy.cuda()
@@ -586,7 +597,7 @@ def build_model(
 
     lambda_edge=0.075 
     lambda_adaptive=0.025
-    lambda_residual=0.1
+    lambda_residual=0.25
     
     L_edge, L_adaptive, L_residual_penalty = edge_aware_loss(input_warped, residual_warped, falloff, falloff_weight)
     edge_loss = lambda_edge * L_edge + lambda_adaptive * L_adaptive + lambda_residual * L_residual_penalty
@@ -596,7 +607,8 @@ def build_model(
     loss = (
         loss_scales[0] * edge_loss + 
         loss_scales[1] * lpips_loss + 
-        loss_scales[2] * secret_loss
+        loss_scales[2] * secret_loss + 
+        lambda_residual * residual_loss
     )
 
     if not args.no_gan:
@@ -610,6 +622,7 @@ def build_model(
     writer.add_scalar("Edge_Loss/L_edge", L_edge, global_step)
     writer.add_scalar("Edge_Loss/L_adaptive", L_adaptive, global_step)
     writer.add_scalar("Edge_Loss/L_residual_penalty", L_residual_penalty, global_step)
+    writer.add_scalar("Edge_Loss/L_residual_LPIPS", residual_loss, global_step)
 
     if not args.no_gan:
         writer.add_scalar("Model_Loss/G_loss", G_loss, global_step)
