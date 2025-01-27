@@ -11,6 +11,7 @@ from kornia import color
 import kornia as K
 import kornia.filters as KF
 import torch.nn.functional as F
+import lpips
 import warnings
 
 warnings.filterwarnings("ignore")
