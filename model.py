@@ -13,6 +13,7 @@ import kornia.filters as KF
 import torch.nn.functional as F
 import lpips
 import warnings
+from PIL import Image
 
 warnings.filterwarnings("ignore")
 from torchvision import transforms
@@ -148,6 +149,7 @@ def residual_loss(residual_image, k_val = 2.0):
     L_lpips_raw = lpips_alex(residual_image, target_image_tensor).mean()
     L_lpips_transformed = torch.exp(-k_val * L_lpips_raw)
     return L_lpips_transformed
+    
 class Dense(nn.Module):
     def __init__(
         self,
