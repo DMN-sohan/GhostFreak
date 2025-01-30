@@ -574,7 +574,7 @@ def build_model(
     normalized_input = image_input * 2 - 1
     normalized_encoded = encoded_image * 2 - 1
     lpips_loss = torch.mean(lpips_fn(normalized_input, normalized_encoded))
-    residual_loss = residual_loss(residual)
+    residual_l = residual_loss(residual)
     cross_entropy = nn.BCELoss()
     if args.cuda:
         cross_entropy = cross_entropy.cuda()
@@ -611,7 +611,7 @@ def build_model(
         loss_scales[0] * edge_loss + 
         loss_scales[1] * lpips_loss + 
         loss_scales[2] * secret_loss + 
-        lambda_residual * residual_loss
+        lambda_residual * residual_l
     )
 
     if not args.no_gan:
@@ -625,7 +625,7 @@ def build_model(
     writer.add_scalar("Edge_Loss/L_edge", L_edge, global_step)
     writer.add_scalar("Edge_Loss/L_adaptive", L_adaptive, global_step)
     writer.add_scalar("Edge_Loss/L_residual_penalty", L_residual_penalty, global_step)
-    writer.add_scalar("Edge_Loss/L_residual_LPIPS", residual_loss, global_step)
+    writer.add_scalar("Edge_Loss/L_residual_LPIPS", residual_l, global_step)
 
     if not args.no_gan:
         writer.add_scalar("Model_Loss/G_loss", G_loss, global_step)
