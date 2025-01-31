@@ -1,7 +1,7 @@
 # General Settings
 exp_name: Torch                                  # Experiment name
-seed: 0                                          # Random seed for reproducibility
-numpy_seed : 0                                   # Numpy seed 
+seed: 2                                          # Random seed for reproducibility
+numpy_seed : 4                                   # Numpy seed 
 cuda: true                                       # Whether to use GPU (CUDA)
 batch_size: 4                                    # Batch size for training
 num_steps: 15000                                 # Total training steps
@@ -78,4 +78,4 @@ u_scale: 100                                      # U-channel scale in YUV color
 v_scale: 100                                      # V-channel scale in YUV color space
 
 # Steps Configuration
-no_im_loss_steps: 1000                            # Steps before image loss is enabled
+no_im_loss_steps: 1250                            # Steps before image loss is enabled
