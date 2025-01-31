@@ -611,7 +611,7 @@ def build_model(
         loss_scales[0] * edge_loss + 
         loss_scales[1] * lpips_loss + 
         loss_scales[2] * secret_loss + 
-        lambda_residual * residual_l
+        loss_scales[1] * residual_l
     )
 
     if not args.no_gan:
