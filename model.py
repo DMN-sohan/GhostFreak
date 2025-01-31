@@ -603,7 +603,7 @@ def build_model(
     lambda_residual=0.25
     
     L_edge, L_adaptive, L_residual_penalty = edge_aware_loss(input_warped, residual_warped, falloff, falloff_weight)
-    edge_loss = lambda_edge * L_edge + lambda_adaptive * L_adaptive + lambda_residual * L_residual_penalty
+    edge_loss = L_edge # lambda_edge * L_edge + lambda_adaptive * L_adaptive + lambda_residual * L_residual_penalty
     D_loss = D_output_real - D_output_fake
     G_loss = D_output_fake  # todo: figure out what it means
 
