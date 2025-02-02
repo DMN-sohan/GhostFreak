@@ -47,10 +47,10 @@ def main():
         os.makedirs(args.saved_models)
 
 
-    torch.manual_seed(args.torch_seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    np.random.seed(args.numpy_seed)
+    # torch.manual_seed(args.torch_seed)
+    torch.backends.cudnn.deterministic = False
+    torch.backends.cudnn.benchmark = True
+    # np.random.seed(args.numpy_seed)
 
     log_path = os.path.join(args.logs_path, str(args.exp_name))
     writer = SummaryWriter(log_path)
