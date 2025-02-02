@@ -17,17 +17,17 @@ saved_models: ./models/                          # Path for saving trained model
 train_path: /kaggle/input/mirflickr-1m/          # Path to training data
 
 # Loss Function Parameters
-l2_loss_scale: 1                                 # Maximum scale for L2 loss
+l2_loss_scale: 2                                 # Maximum scale for L2 loss
 l2_loss_ramp: 15000                              # Ramp-up steps for L2 loss
 l2_edge_gain: 10                                 # Edge gain for L2 loss
 l2_edge_ramp: 10000                              # Ramp-up steps for edge L2 loss
 l2_edge_delay: 80000                             # Delay before L2 edge ramp starts
 
-lpips_loss_scale: 2.5                            # Maximum scale for LPIPS loss
-lpips_loss_ramp: 7500                            # Ramp-up steps for LPIPS loss
+lpips_loss_scale: 1.5                            # Maximum scale for LPIPS loss
+lpips_loss_ramp: 15000                           # Ramp-up steps for LPIPS loss
 
-secret_loss_scale: 3                             # Maximum scale for secret loss
-secret_loss_ramp: 500                            # Ramp-up steps for secret loss
+secret_loss_scale: 2.5                            # Maximum scale for secret loss
+secret_loss_ramp: 1                              # Ramp-up steps for secret loss
 
 G_loss_scale: 0.5                                # Maximum scale for generator loss
 G_loss_ramp: 15000                               # Ramp-up steps for generator loss
@@ -72,7 +72,7 @@ color_space: RGB                                  # Color space (e.g., RGB, YUV)
 borders: no_edge                                  # Border processing type (e.g., no_edge, edge)
 
 # Learning Rate
-lr: 0.001                                         # Learning rate
+lr: 0.0001                                        # Learning rate
 
 # Secret Embedding
 secret_size: 100                                  # Size of the secret embedding
