@@ -119,23 +119,7 @@ def edge_aware_loss(I, R, falloff, falloff_weight, sigma=2.0, kernel_size=5, nei
     # 2. Edge-Sensitive Loss (L_edge)
     L_edge = torch.mean(((1 - E_soft) * R) ** 2)
 
-    # 3. Adaptive Masking Loss (L_adaptive)
-    #   - Edge density calculation (optimized with convolution)
-    kernel = torch.ones((1, 1, neighborhood_size, neighborhood_size), device=I.device, dtype=I.dtype) / (neighborhood_size * neighborhood_size)
-    pad = neighborhood_size // 2
-    edge_density = F.conv2d(E_soft, weight=kernel, padding=pad)
-
-    #   - Adaptive mask creation
-    A = (1 - edge_density) * falloff * falloff_weight
-
-    #   - Adaptive masking loss
-    L_adaptive = torch.mean((A * R) ** 2)
-
-    # 4. Residual Penalty (L_residual_penalty) - Prevent blank residuals
-    epsilon = 1e-4  # Small threshold to prevent blank residuals
-    L_residual_penalty = torch.mean(torch.clamp(R, min=epsilon) ** 2)
-
-    return L_edge, L_adaptive, L_residual_penalty
+    return L_edge
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 lpips_alex = lpips.LPIPS(net="alex", verbose=False).to(device)
@@ -598,11 +582,11 @@ def build_model(
             >= 0.7
         )
 
-    lambda_edge=0.075 
-    lambda_adaptive=0.025
-    lambda_residual=0.25
+    # lambda_edge=0.075 
+    # lambda_adaptive=0.025
+    # lambda_residual=0.25
     
-    L_edge, L_adaptive, L_residual_penalty = edge_aware_loss(input_warped, residual_warped, falloff, falloff_weight)
+    L_edge = edge_aware_loss(input_warped, residual_warped, falloff, falloff_weight)
     edge_loss = L_edge # lambda_edge * L_edge + lambda_adaptive * L_adaptive + lambda_residual * L_residual_penalty
     D_loss = D_output_real - D_output_fake
     G_loss = D_output_fake  # todo: figure out what it means
