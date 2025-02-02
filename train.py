@@ -47,7 +47,7 @@ def main():
         os.makedirs(args.saved_models)
 
 
-    torch.manual_seed(args.seed)
+    torch.manual_seed(args.torch_seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     np.random.seed(args.numpy_seed)
