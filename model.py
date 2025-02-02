@@ -607,10 +607,7 @@ def build_model(
 
     writer.add_scalar("Edge_Loss/edge_loss", edge_loss, global_step)
     writer.add_scalar("Edge_Loss/L_edge", L_edge, global_step)
-    writer.add_scalar("Edge_Loss/L_adaptive", L_adaptive, global_step)
-    writer.add_scalar("Edge_Loss/L_residual_penalty", L_residual_penalty, global_step)
-    writer.add_scalar("Edge_Loss/L_residual_LPIPS", residual_l, global_step)
-
+    
     if not args.no_gan:
         writer.add_scalar("Model_Loss/G_loss", G_loss, global_step)
     writer.add_scalar("Model_Loss/total_loss", loss, global_step)
