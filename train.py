@@ -48,8 +48,8 @@ def main():
 
 
     torch.manual_seed(args.torch_seed)
-    torch.backends.cudnn.deterministic = False
-    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     np.random.seed(args.numpy_seed)
 
     log_path = os.path.join(args.logs_path, str(args.exp_name))
