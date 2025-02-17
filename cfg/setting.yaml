@@ -2,7 +2,7 @@
 exp_name: Torch                                  # Experiment name
 
 torch_seed: 4                                    # Random seed for reproducibility
-numpy_seed : 0                                   # Numpy seed 
+numpy_seed : 2                                   # Numpy seed 
 
 torch_seed: 0                                     # Random seed for reproducibility
 numpy_seed : 18                                   # Numpy seed 
