@@ -129,7 +129,21 @@ target_image = Image.open(target_image_path).convert('RGB')
 target_image_tensor = torch.from_numpy(np.array(target_image)).float().permute(2, 0, 1).unsqueeze(0) / 255.0
 target_image_tensor = target_image_tensor.to(device)
 
-def residual_loss(residual_image, k_val = 2.0):
+secret_residuals_path = r"/kaggle/input/gf-helper/"
+secret_residual_tensors = []
+
+for filename in os.listdir(secret_residuals_path):  # No sorting
+    file_path = os.path.join(secret_residuals_path, filename)
+    
+    if filename.lower().endswith(('.png', '.jpg', '.jpeg')):  # Check valid image formats
+        image = Image.open(file_path).convert('RGB')  # Open & convert to RGB
+        image_tensor = torch.from_numpy(np.array(image)).float().permute(2, 0, 1).unsqueeze(0) / 255.0
+        image_tensor = image_tensor.to(device)  # Move to device
+        
+        secret_residual_tensors.append(image_tensor)  # Store tensor
+        print(f"Loaded: {filename}")
+        
+def residual_loss(residual_image, target_image_tensor, k_val = 2.0):
     L_lpips_raw = lpips_alex(residual_image, target_image_tensor).mean()
     L_lpips_transformed = torch.exp(-k_val * L_lpips_raw)
     return L_lpips_transformed
@@ -558,11 +572,11 @@ def build_model(
     normalized_input = image_input * 2 - 1
     normalized_encoded = encoded_image * 2 - 1
     lpips_loss = torch.mean(lpips_fn(normalized_input, normalized_encoded))
-    residual_l = residual_loss(residual)
+    residual_l = residual_loss(residual, target_image_tensor)
     cross_entropy = nn.BCELoss()
     if args.cuda:
         cross_entropy = cross_entropy.cuda()
-    secret_loss = cross_entropy(decoded_secret, secret_input)
+    secret_loss = cross_entropy(decoded_secret, secret_input) + max([residual_loss(residual, i) for i in secret_residual_tensors])
     decipher_indicator = 0
     if (
         torch.sum(
