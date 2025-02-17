@@ -484,6 +484,7 @@ def build_model(
     lpips_fn,
     secret_input,
     image_input,
+    no_im_loss,
     l2_edge_gain,
     borders,
     secret_size,
@@ -576,7 +577,7 @@ def build_model(
     cross_entropy = nn.BCELoss()
     if args.cuda:
         cross_entropy = cross_entropy.cuda()
-    secret_loss = cross_entropy(decoded_secret, secret_input) + max([residual_loss(residual, i) for i in secret_residual_tensors])
+    secret_loss = cross_entropy(decoded_secret, secret_input) + max([residual_loss(residual, i) for i in secret_residual_tensors]) if no_im_loss else cross_entropy(decoded_secret, secret_input)
     decipher_indicator = 0
     if (
         torch.sum(
