@@ -154,6 +154,7 @@ def main():
                 lpips_alex,
                 secret_input,
                 image_input,
+                no_im_loss,
                 args.l2_edge_gain,
                 args.borders,
                 args.secret_size,
