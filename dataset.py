@@ -1,3 +1,6 @@
+from PIL import ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
 import os
 import numpy as np
 from glob import glob
