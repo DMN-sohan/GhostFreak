@@ -290,7 +290,7 @@ class GhostFreakEncoder(nn.Module):
         secret = secret.reshape(-1, 3, 50, 50)
         secret_enlarged = nn.Upsample(scale_factor=(8, 8))(secret)
 
-        # print(f"{secret_enlarged.shape} {rgb_image.shape} {hsv_image.shape} {cmyk_image.shape}")
+        print(f"{secret_enlarged.shape} {rgb_image.shape} {hsv_image.shape} {cmyk_image.shape}")
 
         # Concatenate the secret, RGB, HSV, and CMYK representations along the channel dimension.
         inputs = torch.cat([secret_enlarged, rgb_image, hsv_image, cmyk_image], dim=1)
