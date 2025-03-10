@@ -67,9 +67,9 @@ def main():
     )
 
     
-    encoder = model.GhostFreakEncoder(KAN=args.KAN)
+    encoder = model.GhostFreakEncoder()
     decoder = model.GhostFreakDecoder(
-        KAN=args.KAN, secret_size=args.secret_size
+        secret_size=args.secret_size
     )
 
     discriminator = model.Discriminator()
