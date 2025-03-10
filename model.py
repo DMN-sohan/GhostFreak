@@ -215,29 +215,28 @@ class Flatten(nn.Module):
 
 
 class SpatialTransformerNetwork(nn.Module):
-    def __init__(self): 
+    def __init__(self):
         super(SpatialTransformerNetwork, self).__init__()
-
+        # With a 400x400 input, using four conv layers (stride=2) reduces the spatial dims.
         self.localization = nn.Sequential(
-            Conv2D(
-                3, 32, 3, strides=2, activation="relu"
-            ), 
-            Conv2D(32, 64, 3, strides=2, activation="relu"),
-            Conv2D(64, 128, 3, strides=2, activation="relu"),
-            Flatten(),
-            Dense(320000, 128, activation="relu"),
-            nn.Linear(128, 6),
+            Conv2D(3, 32, 3, strides=2, activation="relu"),    # 400 -> ~200
+            Conv2D(32, 64, 3, strides=2, activation="relu"),     # ~200 -> ~100
+            Conv2D(64, 128, 3, strides=2, activation="relu"),    # ~100 -> ~50
+            Conv2D(128, 256, 3, strides=2, activation="relu"),   # ~50 -> ~25
+            Flatten(),  # 256 * 25 * 25 = 160000 features
+            Dense(160000, 256, activation="relu"),
+            nn.Linear(256, 6),
         )
-        self.localization[-1].weight.data.fill_(0)
-        self.localization[-1].bias.data = torch.FloatTensor([1, 0, 0, 0, 1, 0])
+        # Initialize the final layer to the identity transformation.
+        self.localization[-1].weight.data.zero_()
+        self.localization[-1].bias.data.copy_(torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float))
 
-    def forward(self, image):
-        theta = self.localization(image)
+    def forward(self, x):
+        theta = self.localization(x)
         theta = theta.view(-1, 2, 3)
-        grid = F.affine_grid(theta, image.size(), align_corners=False)
-        transformed_image = F.grid_sample(image, grid, align_corners=False)
-
-        return transformed_image
+        grid = F.affine_grid(theta, x.size(), align_corners=False)
+        x_transformed = F.grid_sample(x, grid, align_corners=False)
+        return x_transformed
 
 class GhostFreakEncoder(nn.Module):
     def __init__(
@@ -343,47 +342,98 @@ class GhostFreakEncoder(nn.Module):
         return residual 
 
 class GhostFreakDecoder(nn.Module):
-    def __init__(self, KAN=False, secret_size=100):
+    def __init__(self, secret_size=100):
         super(GhostFreakDecoder, self).__init__()
         self.secret_size = secret_size
-
+        
+        # Use the revised STN first.
         self.stn = SpatialTransformerNetwork()
-        self.decoder = nn.Sequential(
-            Conv2D(3, 32, 3, strides=2, activation="relu"),
-            Conv2D(32, 32, 3, activation="relu"),
-            Conv2D(32, 64, 3, strides=2, activation="relu"),
-            Conv2D(64, 64, 3, activation="relu"),
-            Conv2D(64, 64, 3, strides=2, activation="relu"),
-            Conv2D(64, 128, 3, strides=2, activation="relu"),
-            Conv2D(128, 128, 3, strides=2, activation="relu"),
-            Flatten(),
-            Dense(21632, 512, activation="relu"),
-            Dense(512, secret_size, activation=None),
+        
+        # Encoder path (for skip connections) matching the image size.
+        self.enc = nn.Sequential(
+            Conv2D(3, 32, 3, strides=2, activation="relu"),    # 400 -> ~200
+            Conv2D(32, 64, 3, strides=2, activation="relu"),     # ~200 -> ~100
+            Conv2D(64, 128, 3, strides=2, activation="relu"),    # ~100 -> ~50
+            Conv2D(128, 256, 3, strides=2, activation="relu"),   # ~50 -> ~25
+            Conv2D(256, 512, 3, strides=2, activation="relu"),   # ~25 -> ~13
         )
+        
+        # Decoder path with upsampling and skip connections (U-Net style).
+        self.up1 = Conv2D(512, 256, 3, activation="relu")
+        self.conv1 = Conv2D(512, 256, 3, activation="relu")  # Merge with encoder layer 4
+        
+        self.up2 = Conv2D(256, 128, 3, activation="relu")
+        self.conv2 = Conv2D(256, 128, 3, activation="relu")  # Merge with encoder layer 3
+        
+        self.up3 = Conv2D(128, 64, 3, activation="relu")
+        self.conv3 = Conv2D(128, 64, 3, activation="relu")   # Merge with encoder layer 2
+        
+        self.up4 = Conv2D(64, 32, 3, activation="relu")
+        self.conv4 = Conv2D(64, 32, 3, activation="relu")    # Merge with encoder layer 1
+        
+        # Final convolution to produce the secret output map.
+        self.final_conv = Conv2D(32, secret_size, 1, activation=None)
 
     def forward(self, image):
-
+        # Normalize the input image.
         image = image - 0.5
-        transformed_image = self.stn(image)
-
-        return torch.sigmoid(self.decoder(transformed_image))
+        
+        # Apply spatial transformation.
+        x = self.stn(image)
+        
+        # Encoder forward pass with skip connections.
+        e1 = self.enc[0](x)   # Output: [batch, 32, ~200, ~200]
+        e2 = self.enc[1](e1)  # Output: [batch, 64, ~100, ~100]
+        e3 = self.enc[2](e2)  # Output: [batch, 128, ~50, ~50]
+        e4 = self.enc[3](e3)  # Output: [batch, 256, ~25, ~25]
+        e5 = self.enc[4](e4)  # Output: [batch, 512, ~13, ~13]
+        
+        # Decoder with upsampling.
+        d1 = nn.Upsample(scale_factor=2, mode='nearest')(e5)  # Upsample to ~26x26
+        d1 = self.up1(d1)
+        d1 = torch.cat([e4, d1], dim=1)  # Concatenate: 256 + 256 channels = 512
+        d1 = self.conv1(d1)
+        
+        d2 = nn.Upsample(scale_factor=2, mode='nearest')(d1)  # Upsample to ~50x50
+        d2 = self.up2(d2)
+        d2 = torch.cat([e3, d2], dim=1)  # Concatenate: 128 + 128 channels = 256
+        d2 = self.conv2(d2)
+        
+        d3 = nn.Upsample(scale_factor=2, mode='nearest')(d2)  # Upsample to ~100x100
+        d3 = self.up3(d3)
+        d3 = torch.cat([e2, d3], dim=1)  # Concatenate: 64 + 64 channels = 128
+        d3 = self.conv3(d3)
+        
+        d4 = nn.Upsample(scale_factor=2, mode='nearest')(d3)  # Upsample to ~200x200
+        d4 = self.up4(d4)
+        d4 = torch.cat([e1, d4], dim=1)  # Concatenate: 32 + 32 channels = 64
+        d4 = self.conv4(d4)
+        
+        # Final secret map and aggregation (e.g., global average pooling).
+        secret_map = self.final_conv(d4)  # Shape: [batch, secret_size, H, W]
+        secret_out = torch.sigmoid(torch.mean(secret_map, dim=[2, 3]))
+        return secret_out
 
 class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
+        # A deeper discriminator for 400x400 images.
         self.model = nn.Sequential(
-            Conv2D(3, 8, 3, strides=2, activation="relu"),
-            Conv2D(8, 16, 3, strides=2, activation="relu"),
-            Conv2D(16, 32, 3, strides=2, activation="relu"),
-            Conv2D(32, 64, 3, strides=2, activation="relu"),
-            Conv2D(64, 1, 3, activation=None),
+            Conv2D(3, 32, 3, strides=2, activation="leaky_relu"),    # 400 -> ~200
+            Conv2D(32, 64, 3, strides=2, activation="leaky_relu"),     # ~200 -> ~100
+            Conv2D(64, 128, 3, strides=2, activation="leaky_relu"),    # ~100 -> ~50
+            Conv2D(128, 256, 3, strides=2, activation="leaky_relu"),   # ~50 -> ~25
+            Conv2D(256, 512, 3, strides=2, activation="leaky_relu"),   # ~25 -> ~13
+            Conv2D(512, 512, 3, strides=2, activation="leaky_relu"),   # ~13 -> ~7
+            Flatten(),
+            Dense(512 * 7 * 7, 1024, activation="leaky_relu"),
+            Dense(1024, 1, activation=None)
         )
 
     def forward(self, image):
-        x = image - 0.5
-        x = self.model(x)
-        output = torch.mean(x)
-        return output, x
+        x = image - 0.5  # Normalize the image.
+        validity = self.model(x)
+        return validity
 
 
 def transform_net(encoded_image, args, global_step):
